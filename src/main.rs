@@ -2,7 +2,7 @@ use hound::{WavReader, SampleFormat};
 use tract_onnx::{prelude::*, tract_hir::{internal::DimLike, tract_ndarray::Array}};
 
 fn main() -> TractResult<()> {
-    let window_size_samples = ( 16000. * 0.5 ) as usize;
+    let window_size_samples = ( 16000. * 0.05 ) as usize;
     let model = onnx()
         .model_for_path("./silero-vad/files/silero_vad.onnx")?
         .with_input_names(["input", "h0", "c0"])?
@@ -36,8 +36,8 @@ fn main() -> TractResult<()> {
 
     let min_silence_duration_ms = 100;
     let min_speech_duration_ms = 250;
-    let threshold = 0.5;
-    let neg_threshold = 0.35;
+    let threshold = 0.8;
+    let neg_threshold = 0.7;
     let min_silence_samples = min_silence_duration_ms * 16000 / 1000;
     let min_speech_samples = min_speech_duration_ms * 16000 / 1000;
 
