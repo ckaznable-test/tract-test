@@ -2,7 +2,7 @@ use hound::{WavReader, SampleFormat};
 use tract_onnx::{prelude::*, tract_hir::{internal::DimLike, tract_ndarray::Array}};
 
 fn main() -> TractResult<()> {
-    let window_size_samples = ( 16000. * 0.05 ) as usize;
+    let window_size_samples = ( 16000. * 0.03 ) as usize;
     let model = onnx()
         .model_for_path("./silero-vad/files/silero_vad.onnx")?
         .with_input_names(["input", "h0", "c0"])?
@@ -36,14 +36,16 @@ fn main() -> TractResult<()> {
 
     let min_silence_duration_ms = 100;
     let min_speech_duration_ms = 250;
-    let threshold = 0.8;
-    let neg_threshold = 0.7;
+    let threshold = 0.6;
+    let neg_threshold = 0.45;
     let min_silence_samples = min_silence_duration_ms * 16000 / 1000;
     let min_speech_samples = min_speech_duration_ms * 16000 / 1000;
 
     let mut triggered = false;
     let mut current_speech = 0;
     let mut temp_end = 0;
+
+    let mut start_prob = 0.0;
 
     for (ix, speech_prob) in output.into_iter().enumerate() {
         if speech_prob >= threshold && temp_end != 0 {
@@ -52,13 +54,14 @@ fn main() -> TractResult<()> {
         if speech_prob >= threshold && !triggered {
             triggered = true;
             current_speech = window_size_samples * ix;
+            start_prob = speech_prob;
         } else if speech_prob < neg_threshold && triggered {
             if temp_end == 0 {
                 temp_end = window_size_samples * ix;
             }
             if (window_size_samples * ix) - temp_end >= min_silence_samples {
                 if temp_end - current_speech > min_speech_samples {
-                    println!("{} {}", current_speech as f32 / 16000., temp_end as f32 / 16000.);
+                    println!("[{} {}] {} {}", start_prob, speech_prob, current_speech as f32 / 16000., temp_end as f32 / 16000.);
                 }
                 temp_end = 0;
                 triggered = false
