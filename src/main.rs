@@ -2,7 +2,7 @@ use hound::{WavReader, SampleFormat};
 use tract_onnx::{prelude::*, tract_hir::{internal::DimLike, tract_ndarray::Array}};
 
 fn main() -> TractResult<()> {
-    let window_size_samples = ( 16000. * 0.05 ) as usize;
+    let window_size_samples = ( 16000. * 0.5 ) as usize;
     let model = onnx()
         .model_for_path("./silero-vad/files/silero_vad.onnx")?
         .with_input_names(["input", "h0", "c0"])?
@@ -89,7 +89,6 @@ fn read_wav_file(file_path: &str) -> Result<Vec<f32>, hound::Error> {
         }
     };
 
-    // 将样本数据根据通道数重新排列
     let num_samples = samples.len() / num_channels;
     let mut interleaved_samples = Vec::with_capacity(num_samples);
     for i in 0..num_samples {
