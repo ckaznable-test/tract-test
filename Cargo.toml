@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 hound = "3.5.0"
 ndarray-npy = "0.8.1"
+rubato = "0.12.0"
 tract-onnx = "0.17.9"
 
 [profile.release]

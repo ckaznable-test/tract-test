@@ -1,4 +1,5 @@
-use hound::{WavReader, SampleFormat};
+use hound::{WavReader, SampleFormat, WavWriter};
+use rubato::{SincFixedIn, WindowFunction, InterpolationType, InterpolationParameters, Resampler};
 use tract_onnx::{prelude::*, tract_hir::{internal::DimLike, tract_ndarray::Array}};
 
 fn main() -> TractResult<()> {
@@ -15,8 +16,9 @@ fn main() -> TractResult<()> {
         .with_input_fact(2, InferenceFact::dt_shape(f32::datum_type(), tvec!(2, 1, 64)))?
         .into_optimized()?
         .into_runnable()?;
-    let wav = read_wav_file("./test.wav").unwrap();
-    let wav = Array::from_shape_vec((1, wav.len()), wav).unwrap();
+    let src = read_wav_file("./input/input.wav").unwrap();
+    let r_src = resample_audio(&src, 22050., 16000.);
+    let wav = Array::from_shape_vec((1, r_src.len()), r_src).unwrap();
     let wav = wav.into_arc_tensor();
     let samples = wav.shape()[1];
     let mut h = Tensor::zero::<f32>(&[2, 1, 64])?;
@@ -34,10 +36,10 @@ fn main() -> TractResult<()> {
         output.push(outputs[0].as_slice::<f32>()?[1]);
     }
 
-    let min_silence_duration_ms = 100;
-    let min_speech_duration_ms = 250;
-    let threshold = 0.6;
-    let neg_threshold = 0.45;
+    let min_silence_duration_ms = 1000;
+    let min_speech_duration_ms = 1000;
+    let threshold = 0.2;
+    let neg_threshold = 0.15;
     let min_silence_samples = min_silence_duration_ms * 16000 / 1000;
     let min_speech_samples = min_speech_duration_ms * 16000 / 1000;
 
@@ -46,12 +48,14 @@ fn main() -> TractResult<()> {
     let mut temp_end = 0;
 
     let mut start_prob = 0.0;
+    let mut file_s = 1;
 
     for (ix, speech_prob) in output.into_iter().enumerate() {
         if speech_prob >= threshold && temp_end != 0 {
             temp_end = 0;
         }
         if speech_prob >= threshold && !triggered {
+            println!("----------------------");
             triggered = true;
             current_speech = window_size_samples * ix;
             start_prob = speech_prob;
@@ -62,11 +66,16 @@ fn main() -> TractResult<()> {
             if (window_size_samples * ix) - temp_end >= min_silence_samples {
                 if temp_end - current_speech > min_speech_samples {
                     println!("[{} {}] {} {}", start_prob, speech_prob, current_speech as f32 / 16000., temp_end as f32 / 16000.);
+                    if let Some(data) = extract_audio_segment(&src, 16000, current_speech as f32 / 16000., temp_end as f32 / 16000.) {
+                        let _ = write_wav_file(format!("output/output{}.wav", file_s).as_str(), &data, 22050, 1);
+                        file_s += 1;
+                    }
                 }
                 temp_end = 0;
                 triggered = false
             }
         }
+        println!("{speech_prob}");
     }
 
     Ok(())
@@ -102,4 +111,55 @@ fn read_wav_file(file_path: &str) -> Result<Vec<f32>, hound::Error> {
     }
 
     Ok(interleaved_samples)
+}
+
+fn resample_audio(input: &[f32], input_sample_rate: f64, output_sample_rate: f64) -> Vec<f32> {
+    let params = InterpolationParameters {
+        sinc_len: 256,
+        f_cutoff: 0.95,
+        interpolation: InterpolationType::Linear,
+        oversampling_factor: 256,
+        window: WindowFunction::BlackmanHarris2,
+    };
+
+    let mut resampler = SincFixedIn::<f32>::new(
+        output_sample_rate / input_sample_rate,
+        2.0,
+        params,
+        input.len(),
+        1,
+    ).unwrap();
+
+    let waves_in = vec![input.to_vec()];
+    let out = resampler.process(&waves_in, None).unwrap();
+    out[0].clone()
+}
+
+fn write_wav_file(file_path: &str, audio_data: &[f32], sample_rate: u32, num_channels: u16) -> Result<(), hound::Error> {
+    let spec = hound::WavSpec {
+        channels: num_channels,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: SampleFormat::Float,
+    };
+    let mut writer = WavWriter::create(file_path, spec)?;
+
+    for &sample in audio_data {
+        writer.write_sample(sample)?;
+    }
+
+    writer.finalize()?;
+    Ok(())
+}
+
+fn extract_audio_segment(samples: &[f32], sample_rate: u32, start_time: f32, end_time: f32) -> Option<Vec<f32>> {
+    let start_sample = (start_time * sample_rate as f32) as usize;
+    let end_sample = (end_time * sample_rate as f32) as usize;
+
+    if start_sample >= samples.len() || end_sample >= samples.len() {
+        return None;
+    }
+
+    let segment = samples[start_sample..=end_sample].to_vec();
+    Some(segment)
 }
