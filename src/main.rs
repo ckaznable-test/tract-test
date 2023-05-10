@@ -38,10 +38,12 @@ fn main() -> TractResult<()> {
 
     let min_silence_duration_ms = 1000;
     let min_speech_duration_ms = 1000;
-    let threshold = 0.2;
-    let neg_threshold = 0.15;
+    let threshold = 0.5;
+    let neg_threshold = 0.1;
     let min_silence_samples = min_silence_duration_ms * 16000 / 1000;
     let min_speech_samples = min_speech_duration_ms * 16000 / 1000;
+
+    println!("{} {}", min_silence_samples, min_speech_samples);
 
     let mut triggered = false;
     let mut current_speech = 0;
@@ -66,7 +68,7 @@ fn main() -> TractResult<()> {
             if (window_size_samples * ix) - temp_end >= min_silence_samples {
                 if temp_end - current_speech > min_speech_samples {
                     println!("[{} {}] {} {}", start_prob, speech_prob, current_speech as f32 / 16000., temp_end as f32 / 16000.);
-                    if let Some(data) = extract_audio_segment(&src, 16000, current_speech as f32 / 16000., temp_end as f32 / 16000.) {
+                    if let Some(data) = extract_audio_segment(&src, 22050, current_speech as f32 / 16000., temp_end as f32 / 16000.) {
                         let _ = write_wav_file(format!("output/output{}.wav", file_s).as_str(), &data, 22050, 1);
                         file_s += 1;
                     }
@@ -154,10 +156,10 @@ fn write_wav_file(file_path: &str, audio_data: &[f32], sample_rate: u32, num_cha
 
 fn extract_audio_segment(samples: &[f32], sample_rate: u32, start_time: f32, end_time: f32) -> Option<Vec<f32>> {
     let start_sample = (start_time * sample_rate as f32) as usize;
-    let end_sample = (end_time * sample_rate as f32) as usize;
+    let mut end_sample = (end_time * sample_rate as f32) as usize;
 
     if start_sample >= samples.len() || end_sample >= samples.len() {
-        return None;
+        end_sample = samples.len() - 1;
     }
 
     let segment = samples[start_sample..=end_sample].to_vec();
